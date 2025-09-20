@@ -1,5 +1,6 @@
 import React, { useState } from 'react';
 import axios from 'axios';
+import CameraScanner from './CameraScanner';
 
 const DocumentUpload = ({ onUploadSuccess }) => {
     const [selectedFile, setSelectedFile] = useState(null);
@@ -8,6 +9,10 @@ const DocumentUpload = ({ onUploadSuccess }) => {
 
     const handleFileSelect = (event) => {
         const file = event.target.files[0];
+        setSelectedFile(file);
+    };
+
+    const handleCameraCapture = (file) => {
         setSelectedFile(file);
     };
 
@@ -61,6 +66,13 @@ const DocumentUpload = ({ onUploadSuccess }) => {
         <div style={{ padding: '20px', border: '1px solid #ccc', borderRadius: '8px' }}>
             <h2>Upload Document</h2>
             
+            {/* Camera Scanner */}
+            <CameraScanner onCapture={handleCameraCapture} />
+            
+            <div style={{ textAlign: 'center', margin: '1rem 0', color: '#666' }}>
+                OR
+            </div>
+            
             <div
                 onDragOver={handleDragOver}
                 onDragLeave={handleDragLeave}
@@ -105,7 +117,8 @@ const DocumentUpload = ({ onUploadSuccess }) => {
                     color: 'white',
                     border: 'none',
                     borderRadius: '4px',
-                    cursor: uploading ? 'not-allowed' : 'pointer'
+                    cursor: uploading ? 'not-allowed' : 'pointer',
+                    width: '100%'
                 }}
             >
                 {uploading ? 'Processing...' : 'Upload & Extract Text'}
