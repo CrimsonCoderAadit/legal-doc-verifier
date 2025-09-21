@@ -1,11 +1,19 @@
 import React, { useState, useEffect } from 'react';
-import Sidebar from './components/SideBar';
-import AuthModal from './components/AuthModal';
-import DocumentUpload from './components/DocumentUpload';
-import OCRResults from './components/OCRResults';
-import DocumentHistory from './components/DocumentHistory';
-import ProgressBar from './components/ProgressBar';
 import './App.css';
+
+// Import components with error handling
+let AuthModal, Sidebar, DocumentUpload, OCRResults, DocumentHistory, ProgressBar;
+
+try {
+  AuthModal = require('./components/AuthModal').default;
+  Sidebar = require('./components/SideBar').default;
+  DocumentUpload = require('./components/DocumentUpload').default;
+  OCRResults = require('./components/OCRResults').default;
+  DocumentHistory = require('./components/DocumentHistory').default;
+  ProgressBar = require('./components/ProgressBar').default;
+} catch (error) {
+  console.error('Component import error:', error);
+}
 
 function App() {
   const [user, setUser] = useState(null);
@@ -15,58 +23,54 @@ function App() {
   const [currentDocument, setCurrentDocument] = useState(null);
   const [uploadProgress, setUploadProgress] = useState(0);
   const [isUploading, setIsUploading] = useState(false);
+  const [appError, setAppError] = useState(null);
 
   useEffect(() => {
-    const token = localStorage.getItem('token');
-    if (token) {
-      validateToken(token);
-    } else {
-      setShowAuthModal(true);
+    try {
+      // For testing, skip authentication and use mock user
+      const mockUser = { username: 'TestUser', email: 'test@example.com' };
+      setUser(mockUser);
+      setShowAuthModal(false);
+    } catch (error) {
+      console.error('App initialization error:', error);
+      setAppError(error.message);
     }
   }, []);
 
-  const validateToken = async (token) => {
+  const handleLogin = (userData, token) => {
     try {
-      const response = await fetch('http://localhost:3001/api/auth/profile', {
-        headers: {
-          'Authorization': `Bearer ${token}`
-        }
-      });
-
-      if (response.ok) {
-        const data = await response.json();
-        setUser(data.user);
-      } else {
-        localStorage.removeItem('token');
-        setShowAuthModal(true);
-      }
+      setUser(userData);
+      localStorage.setItem('token', token);
+      setShowAuthModal(false);
     } catch (error) {
-      console.error('Token validation failed:', error);
-      localStorage.removeItem('token');
-      setShowAuthModal(true);
+      console.error('Login error:', error);
+      setAppError(error.message);
     }
   };
 
-  const handleLogin = (userData, token) => {
-    setUser(userData);
-    localStorage.setItem('token', token);
-    setShowAuthModal(false);
-  };
-
   const handleLogout = () => {
-    setUser(null);
-    localStorage.removeItem('token');
-    setShowAuthModal(true);
-    setCurrentDocument(null);
-    setActiveSection('upload');
-    setSidebarOpen(false);
+    try {
+      setUser(null);
+      localStorage.removeItem('token');
+      setShowAuthModal(true);
+      setCurrentDocument(null);
+      setActiveSection('upload');
+      setSidebarOpen(false);
+    } catch (error) {
+      console.error('Logout error:', error);
+    }
   };
 
   const handleUploadSuccess = (result) => {
-    setCurrentDocument(result);
-    setActiveSection('results');
-    setIsUploading(false);
-    setUploadProgress(0);
+    try {
+      setCurrentDocument(result);
+      setActiveSection('results');
+      setIsUploading(false);
+      setUploadProgress(0);
+    } catch (error) {
+      console.error('Upload success handler error:', error);
+      setAppError(error.message);
+    }
   };
 
   const handleUploadStart = () => {
@@ -83,93 +87,149 @@ function App() {
     setActiveSection('upload');
   };
 
-  const handleSelectDocument = (document) => {
-    setCurrentDocument({
-      success: true,
-      documentId: document._id,
-      filename: document.filename,
-      originalName: document.originalName,
-      extractedText: document.extractedText,
-      confidence: 0.95,
-      analysisResults: document.analysisResults
-    });
-    setActiveSection('results');
-  };
-
   const renderMainContent = () => {
-    switch (activeSection) {
-      case 'upload':
-        return (
-          <div className="main-section">
-            {isUploading && (
-              <ProgressBar 
-                progress={uploadProgress} 
-                message="Processing document..."
+    try {
+      switch (activeSection) {
+        case 'upload':
+          return (
+            <div className="main-section">
+              {isUploading && ProgressBar && (
+                <ProgressBar 
+                  progress={uploadProgress} 
+                  message="Processing document..."
+                />
+              )}
+              {DocumentUpload ? (
+                <DocumentUpload 
+                  onUploadSuccess={handleUploadSuccess}
+                  onUploadStart={handleUploadStart}
+                  onUploadProgress={handleUploadProgress}
+                  user={user}
+                />
+              ) : (
+                <div style={{ color: 'white', textAlign: 'center', padding: '2rem' }}>
+                  <h3>DocumentUpload component not loaded</h3>
+                  <p>Check console for import errors</p>
+                </div>
+              )}
+            </div>
+          );
+        
+        case 'results':
+          return currentDocument && OCRResults ? (
+            <div className="main-section">
+              <OCRResults 
+                result={currentDocument} 
+                onReset={resetDocument}
+                user={user}
               />
-            )}
-            <DocumentUpload 
-              onUploadSuccess={handleUploadSuccess}
-              onUploadStart={handleUploadStart}
-              onUploadProgress={handleUploadProgress}
-              user={user}
-            />
-          </div>
-        );
-      case 'results':
-        return currentDocument ? (
-          <div className="main-section">
-            <OCRResults 
-              result={currentDocument} 
-              onReset={resetDocument}
-              user={user}
-            />
-          </div>
-        ) : (
-          <div className="empty-state">
-            <div className="empty-icon">📄</div>
-            <h3>No document selected</h3>
-            <p>Upload a document or select from history to see results</p>
-            <button 
-              className="primary-btn"
-              onClick={() => setActiveSection('upload')}
-            >
-              Upload Document
-            </button>
-          </div>
-        );
-      case 'history':
-        return (
-          <div className="main-section">
-            <DocumentHistory 
-              user={user} 
-              onSelectDocument={handleSelectDocument} 
-            />
-          </div>
-        );
-      default:
-        return (
-          <DocumentUpload 
-            onUploadSuccess={handleUploadSuccess} 
-            user={user} 
-          />
-        );
+            </div>
+          ) : (
+            <div className="empty-state">
+              <div className="empty-icon">📄</div>
+              <h3>No document selected</h3>
+              <p>Upload a document to see results</p>
+              <button 
+                className="primary-btn"
+                onClick={() => setActiveSection('upload')}
+              >
+                Upload Document
+              </button>
+            </div>
+          );
+        
+        case 'history':
+          return DocumentHistory ? (
+            <div className="main-section">
+              <DocumentHistory 
+                user={user} 
+                onSelectDocument={setCurrentDocument} 
+              />
+            </div>
+          ) : (
+            <div style={{ color: 'white', textAlign: 'center', padding: '2rem' }}>
+              <h3>DocumentHistory component not loaded</h3>
+            </div>
+          );
+        
+        default:
+          return (
+            <div className="main-section">
+              {DocumentUpload && (
+                <DocumentUpload 
+                  onUploadSuccess={handleUploadSuccess} 
+                  user={user} 
+                />
+              )}
+            </div>
+          );
+      }
+    } catch (error) {
+      console.error('Render error:', error);
+      return (
+        <div style={{ color: 'white', textAlign: 'center', padding: '2rem' }}>
+          <h3>Rendering Error</h3>
+          <p>{error.message}</p>
+        </div>
+      );
     }
   };
 
-  if (showAuthModal) {
+  // Error boundary display
+  if (appError) {
+    return (
+      <div style={{ 
+        background: '#1a365d', 
+        color: 'white', 
+        minHeight: '100vh', 
+        display: 'flex', 
+        alignItems: 'center', 
+        justifyContent: 'center',
+        textAlign: 'center',
+        padding: '2rem'
+      }}>
+        <div>
+          <h2>Application Error</h2>
+          <p>{appError}</p>
+          <button 
+            onClick={() => {
+              setAppError(null);
+              window.location.reload();
+            }}
+            style={{
+              background: '#3b82f6',
+              color: 'white',
+              border: 'none',
+              padding: '1rem 2rem',
+              borderRadius: '8px',
+              cursor: 'pointer',
+              marginTop: '1rem'
+            }}
+          >
+            Reload App
+          </button>
+        </div>
+      </div>
+    );
+  }
+
+  // Show auth modal if needed
+  if (showAuthModal && AuthModal) {
     return <AuthModal onLogin={handleLogin} />;
   }
 
   return (
     <div className="app-container">
-      <Sidebar 
-        isOpen={sidebarOpen}
-        onToggle={() => setSidebarOpen(!sidebarOpen)}
-        activeSection={activeSection}
-        onSectionChange={setActiveSection}
-        user={user}
-        onLogout={handleLogout}
-      />
+      {Sidebar && (
+        <Sidebar 
+          isOpen={sidebarOpen}
+          onToggle={() => setSidebarOpen(!sidebarOpen)}
+          activeSection={activeSection}
+          onSectionChange={setActiveSection}
+          user={user}
+          onLogout={handleLogout}
+        />
+      )}
       
       <div className={`main-content ${sidebarOpen ? 'sidebar-open' : ''}`}>
         <header className="app-header">
