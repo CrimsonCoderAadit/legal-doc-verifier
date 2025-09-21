@@ -1,6 +1,7 @@
 import React from 'react';
 import TranslationPanel from './TranslationPanel';
 import LegalAnalysis from './LegalAnalysis';
+import SecurityAnalysis from './SecurityAnalysis';
 
 const OCRResults = ({ result, onReset }) => {
     if (!result) {
@@ -93,6 +94,7 @@ const OCRResults = ({ result, onReset }) => {
             </div>
 
             <LegalAnalysis extractedText={result.extractedText} />
+            <SecurityAnalysis extractedText={result.extractedText} uploadedFile={result.uploadedFile} />
             <TranslationPanel extractedText={result.extractedText} />
         </div>
     );

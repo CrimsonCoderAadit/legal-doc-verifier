@@ -150,3 +150,51 @@ router.post('/analyze', async (req, res) => {
         res.status(500).json({ error: error.message });
     }
 });
+
+const documentSecurityService = require('../services/documentSecurityService');
+
+// Add this route to your existing documents.js file
+router.post('/security-check', upload.single('document'), async (req, res) => {
+    try {
+        if (!req.file) {
+            return res.status(400).json({ error: 'No file uploaded' });
+        }
+
+        const { extractedText } = req.body;
+
+        if (!extractedText) {
+            return res.status(400).json({ error: 'Extracted text is required' });
+        }
+
+        console.log('Analyzing document security:', req.file.filename);
+
+        const securityResult = await documentSecurityService.analyzeDocumentSecurity(
+            req.file.path, 
+            extractedText
+        );
+
+        if (securityResult.success) {
+            res.json({
+                success: true,
+                security: securityResult.security
+            });
+        } else {
+            res.status(500).json({
+                success: false,
+                error: securityResult.error
+            });
+        }
+
+        // Clean up uploaded file
+        setTimeout(() => {
+            const fs = require('fs');
+            fs.unlink(req.file.path, (err) => {
+                if (err) console.error('Error deleting file:', err);
+            });
+        }, 5000);
+
+    } catch (error) {
+        console.error('Security analysis error:', error);
+        res.status(500).json({ error: error.message });
+    }
+});

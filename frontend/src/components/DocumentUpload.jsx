@@ -52,7 +52,7 @@ const DocumentUpload = ({ onUploadSuccess }) => {
             );
 
             if (response.data.success) {
-                onUploadSuccess(response.data);
+                onUploadSuccess({...response.data, uploadedFile: selectedFile});
             }
         } catch (error) {
             console.error('Upload error:', error);
