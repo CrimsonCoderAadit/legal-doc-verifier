@@ -2,7 +2,13 @@ const express = require('express');
 const multer = require('multer');
 const path = require('path');
 const fs = require('fs');
+const crypto = require('crypto');
 const ocrService = require('../services/ocrService');
+const translationService = require('../services/translationService');
+const legalAnalysisService = require('../services/legalAnalysisService');
+const documentSecurityService = require('../services/documentSecurityService');
+const auth = require('../middleware/auth');
+const User = require('../models/User');
 
 const router = express.Router();
 
@@ -23,9 +29,7 @@ const storage = multer.diskStorage({
 
 const upload = multer({
     storage: storage,
-    limits: {
-        fileSize: 10 * 1024 * 1024 // 10MB limit
-    },
+    limits: { fileSize: 10 * 1024 * 1024 },
     fileFilter: (req, file, cb) => {
         const allowedTypes = /jpeg|jpg|png|pdf/;
         const extname = allowedTypes.test(path.extname(file.originalname).toLowerCase());
@@ -39,26 +43,52 @@ const upload = multer({
     }
 });
 
-// Upload and OCR endpoint
-router.post('/upload', upload.single('document'), async (req, res) => {
+// Upload and process document with user authentication
+router.post('/upload', auth, upload.single('document'), async (req, res) => {
     try {
         if (!req.file) {
             return res.status(400).json({ error: 'No file uploaded' });
         }
 
-        console.log('File uploaded:', req.file.filename);
+        console.log('Processing document for user:', req.user.username);
+
+        // Generate file hash
+        const fileBuffer = fs.readFileSync(req.file.path);
+        const fileHash = crypto.createHash('sha256').update(fileBuffer).digest('hex');
 
         // Perform OCR
         const ocrResult = await ocrService.extractText(req.file.path);
 
         if (ocrResult.success) {
-            res.json({
+            // Save document to user's record
+            const documentRecord = {
+                filename: req.file.filename,
+                originalName: req.file.originalname,
+                uploadDate: new Date(),
+                extractedText: ocrResult.text,
+                fileHash: fileHash,
+                analysisResults: {
+                    legal: null,
+                    security: null,
+                    translation: null
+                }
+            };
+
+            // Add to user's documents
+            req.user.documents.push(documentRecord);
+            await req.user.save();
+
+            const response = {
                 success: true,
+                documentId: documentRecord._id,
                 filename: req.file.filename,
                 originalName: req.file.originalname,
                 extractedText: ocrResult.text,
-                confidence: ocrResult.confidence
-            });
+                confidence: ocrResult.confidence,
+                uploadedFile: req.file
+            };
+
+            res.json(response);
         } else {
             res.status(500).json({
                 success: false,
@@ -79,22 +109,68 @@ router.post('/upload', upload.single('document'), async (req, res) => {
     }
 });
 
-module.exports = router;
+// Save analysis results
+router.post('/save-analysis', auth, async (req, res) => {
+    try {
+        const { documentId, analysisType, analysisData } = req.body;
 
-// Add this route to your existing documents.js file
+        const user = await User.findById(req.user._id);
+        const document = user.documents.id(documentId);
 
-const translationService = require('../services/translationService');
+        if (!document) {
+            return res.status(404).json({ error: 'Document not found' });
+        }
+
+        document.analysisResults[analysisType] = analysisData;
+        await user.save();
+
+        res.json({ success: true, message: 'Analysis saved' });
+
+    } catch (error) {
+        console.error('Save analysis error:', error);
+        res.status(500).json({ error: error.message });
+    }
+});
+
+// Get user's documents
+router.get('/my-documents', auth, async (req, res) => {
+    try {
+        const user = await User.findById(req.user._id);
+        res.json({
+            success: true,
+            documents: user.documents.sort((a, b) => new Date(b.uploadDate) - new Date(a.uploadDate))
+        });
+    } catch (error) {
+        console.error('Get documents error:', error);
+        res.status(500).json({ error: error.message });
+    }
+});
+
+// Existing routes (analyze, translate, security-check) remain the same...
+// Legal analysis endpoint
+router.post('/analyze', async (req, res) => {
+    try {
+        const { text } = req.body;
+        if (!text) {
+            return res.status(400).json({ error: 'Text is required' });
+        }
+
+        const analysis = legalAnalysisService.analyzeDocument(text);
+        res.json({ success: true, analysis: analysis });
+
+    } catch (error) {
+        console.error('Legal analysis error:', error);
+        res.status(500).json({ error: error.message });
+    }
+});
 
 // Translation endpoint
 router.post('/translate', async (req, res) => {
     try {
         const { text, targetLanguage = 'hi' } = req.body;
-
         if (!text) {
             return res.status(400).json({ error: 'Text is required' });
         }
-
-        console.log(`Translating to ${targetLanguage}:`, text.substring(0, 50) + '...');
 
         const result = await translationService.translateText(text, targetLanguage);
 
@@ -119,41 +195,7 @@ router.post('/translate', async (req, res) => {
     }
 });
 
-// Get supported languages
-router.get('/languages', (req, res) => {
-    const languages = translationService.getSupportedLanguages();
-    res.json({ languages });
-});
-
-const legalAnalysisService = require('../services/legalAnalysisService');
-
-// Legal analysis endpoint
-router.post('/analyze', async (req, res) => {
-    try {
-        const { text } = req.body;
-
-        if (!text) {
-            return res.status(400).json({ error: 'Text is required' });
-        }
-
-        console.log('Analyzing document:', text.substring(0, 100) + '...');
-
-        const analysis = legalAnalysisService.analyzeDocument(text);
-
-        res.json({
-            success: true,
-            analysis: analysis
-        });
-
-    } catch (error) {
-        console.error('Legal analysis error:', error);
-        res.status(500).json({ error: error.message });
-    }
-});
-
-const documentSecurityService = require('../services/documentSecurityService');
-
-// Add this route to your existing documents.js file
+// Security check endpoint
 router.post('/security-check', upload.single('document'), async (req, res) => {
     try {
         if (!req.file) {
@@ -161,12 +203,9 @@ router.post('/security-check', upload.single('document'), async (req, res) => {
         }
 
         const { extractedText } = req.body;
-
         if (!extractedText) {
             return res.status(400).json({ error: 'Extracted text is required' });
         }
-
-        console.log('Analyzing document security:', req.file.filename);
 
         const securityResult = await documentSecurityService.analyzeDocumentSecurity(
             req.file.path, 
@@ -185,9 +224,7 @@ router.post('/security-check', upload.single('document'), async (req, res) => {
             });
         }
 
-        // Clean up uploaded file
         setTimeout(() => {
-            const fs = require('fs');
             fs.unlink(req.file.path, (err) => {
                 if (err) console.error('Error deleting file:', err);
             });
@@ -198,3 +235,5 @@ router.post('/security-check', upload.single('document'), async (req, res) => {
         res.status(500).json({ error: error.message });
     }
 });
+
+module.exports = router;
